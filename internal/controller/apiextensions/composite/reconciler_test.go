@@ -67,6 +67,7 @@ func TestReconcile(t *testing.T) {
 	}
 
 	now := metav1.Now()
+	then := metav1.NewTime(now.Add(-1 * time.Hour))
 
 	cases := map[string]struct {
 		reason string
@@ -1158,6 +1159,74 @@ func TestReconcile(t *testing.T) {
 				r: reconcile.Result{},
 			},
 		},
+		"UnchangedConditionsKeepLastTransitionTime": {
+			reason: "Conditions that haven't changed should keep their last transition time, so that applying an unchanged status doesn't write to the API server. Conditions that changed should get a new one.",
+			args: args{
+				c: &test.MockClient{
+					MockGet: WithComposite(t, NewComposite(func(xr *composite.Unstructured) {
+						xr.SetConditions(
+							withLastTransitionTime(v1.WatchCircuitClosed(), then),
+							xpv2.Condition{
+								Type:               "DatabaseReady",
+								Status:             corev1.ConditionTrue,
+								LastTransitionTime: then,
+								Reason:             "Available",
+							},
+							withLastTransitionTime(xpv2.ReconcileSuccess(), then),
+							withLastTransitionTime(xpv2.Creating(), then),
+						)
+					})),
+					MockStatusPatch: WantComposite(t, NewComposite(func(xr *composite.Unstructured) {
+						xr.SetConditions(
+							withLastTransitionTime(v1.WatchCircuitClosed(), then),
+							xpv2.Condition{
+								Type:               "DatabaseReady",
+								Status:             corev1.ConditionTrue,
+								LastTransitionTime: then,
+								Reason:             "Available",
+							},
+							withLastTransitionTime(xpv2.ReconcileSuccess(), then),
+							// The XR was creating, and is now available.
+							xpv2.Available(),
+						)
+					})),
+				},
+				opts: []ReconcilerOption{
+					WithCompositeFinalizer(resource.NewNopFinalizer()),
+					WithCompositionSelector(CompositionSelectorFn(func(_ context.Context, cr resource.Composite) error {
+						cr.SetCompositionReference(&corev1.ObjectReference{})
+						return nil
+					})),
+					WithCompositionRevisionFetcher(CompositionRevisionFetcherFn(func(_ context.Context, _ resource.Composite) (*v1.CompositionRevision, error) {
+						return NewCompositionRevision(), nil
+					})),
+					WithConfigurator(ConfiguratorFn(func(_ context.Context, _ resource.Composite, _ *v1.CompositionRevision) error {
+						return nil
+					})),
+					WithComposer(ComposerFn(func(_ context.Context, _ *composite.Unstructured, _ CompositionRequest) (CompositionResult, error) {
+						return CompositionResult{
+							Conditions: []TargetedCondition{
+								{
+									Condition: xpv2.Condition{
+										Type:               "DatabaseReady",
+										Status:             corev1.ConditionTrue,
+										LastTransitionTime: now,
+										Reason:             "Available",
+									},
+									Target: CompositionTargetComposite,
+								},
+							},
+						}, nil
+					})),
+					WithConnectionPublishers(ConnectionPublisherFn(func(_ context.Context, _ ConnectionSecretOwner, _ managed.ConnectionDetails) (published bool, err error) {
+						return false, nil
+					})),
+				},
+			},
+			want: want{
+				r: reconcile.Result{},
+			},
+		},
 		"CustomEventsFailToGetClaim": {
 			reason: "We should emit custom events that were returned by the composer. If we cannot get the claim, we should just emit events for the composite and continue as normal.",
 			args: args{
@@ -1736,6 +1805,11 @@ func WantComposite(t *testing.T, want resource.Composite) func(_ context.Context
 
 		return nil
 	}
+}
+
+func withLastTransitionTime(c xpv2.Condition, t metav1.Time) xpv2.Condition {
+	c.LastTransitionTime = t
+	return c
 }
 
 // Test types.

@@ -631,7 +631,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		status.MarkConditions(xpv2.ReconcilePaused().WithMessage(reconcilePausedMsg))
 		// If the pause annotation is removed, we will have a chance to reconcile again and resume
 		// and if status update fails, we will reconcile again to retry to update the status
-		return reconcile.Result{}, errors.Wrap(r.client.Status().Patch(updateCtx, xrStatus, client.Apply, client.ForceOwnership, client.FieldOwner(FieldOwnerReconciler)), errUpdateStatus)
+		return reconcile.Result{}, errors.Wrap(r.applyStatus(updateCtx, xr, xrStatus), errUpdateStatus)
 	}
 
 	// Record the reconcile-requested-at annotation token in status so
@@ -657,7 +657,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 			err = errors.Wrap(err, errRemoveFinalizer)
 			r.record.Event(xr, event.Warning(reasonDelete, err))
 			status.MarkConditions(xpv2.ReconcileError(err))
-			_ = r.client.Status().Patch(updateCtx, xrStatus, client.Apply, client.ForceOwnership, client.FieldOwner(FieldOwnerReconciler))
+			_ = r.applyStatus(updateCtx, xr, xrStatus)
 
 			return reconcile.Result{}, err
 		}
@@ -669,7 +669,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		log.Debug("Successfully deleted composite resource")
 		status.MarkConditions(xpv2.ReconcileSuccess())
 
-		return reconcile.Result{Requeue: false}, errors.Wrap(r.client.Status().Patch(updateCtx, xrStatus, client.Apply, client.ForceOwnership, client.FieldOwner(FieldOwnerReconciler)), errUpdateStatus)
+		return reconcile.Result{Requeue: false}, errors.Wrap(r.applyStatus(updateCtx, xr, xrStatus), errUpdateStatus)
 	}
 
 	if err := r.composite.AddFinalizer(ctx, xr); err != nil {
@@ -680,7 +680,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		err = errors.Wrap(err, errAddFinalizer)
 		r.record.Event(xr, event.Warning(reasonInit, err))
 		status.MarkConditions(xpv2.ReconcileError(err))
-		_ = r.client.Status().Patch(updateCtx, xrStatus, client.Apply, client.ForceOwnership, client.FieldOwner(FieldOwnerReconciler))
+		_ = r.applyStatus(updateCtx, xr, xrStatus)
 
 		return reconcile.Result{}, err
 	}
@@ -694,7 +694,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		err = errors.Wrap(err, errSelectComp)
 		r.record.Event(xr, event.Warning(reasonResolve, err))
 		status.MarkConditions(xpv2.ReconcileError(err))
-		_ = r.client.Status().Patch(updateCtx, xrStatus, client.Apply, client.ForceOwnership, client.FieldOwner(FieldOwnerReconciler))
+		_ = r.applyStatus(updateCtx, xr, xrStatus)
 
 		return reconcile.Result{}, err
 	}
@@ -711,7 +711,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		err = errors.Wrap(err, errSelectCompRev)
 		r.record.Event(xr, event.Warning(reasonResolve, err))
 		status.MarkConditions(xpv2.ReconcileError(err))
-		_ = r.client.Status().Patch(updateCtx, xrStatus, client.Apply, client.ForceOwnership, client.FieldOwner(FieldOwnerReconciler))
+		_ = r.applyStatus(updateCtx, xr, xrStatus)
 
 		return reconcile.Result{}, err
 	}
@@ -734,7 +734,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		err = errors.Wrap(err, errFetchComp)
 		r.record.Event(xr, event.Warning(reasonCompose, err))
 		status.MarkConditions(xpv2.ReconcileError(err))
-		_ = r.client.Status().Patch(updateCtx, xrStatus, client.Apply, client.ForceOwnership, client.FieldOwner(FieldOwnerReconciler))
+		_ = r.applyStatus(updateCtx, xr, xrStatus)
 
 		return reconcile.Result{}, err
 	}
@@ -755,7 +755,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 
 		r.record.Event(xr, event.Warning(reasonCompose, err))
 		status.MarkConditions(xpv2.ReconcileError(err))
-		_ = r.client.Status().Patch(updateCtx, xrStatus, client.Apply, client.ForceOwnership, client.FieldOwner(FieldOwnerReconciler))
+		_ = r.applyStatus(updateCtx, xr, xrStatus)
 
 		return reconcile.Result{}, err
 	}
@@ -770,7 +770,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		err = errors.Wrap(err, errConfigure)
 		r.record.Event(xr, event.Warning(reasonCompose, err))
 		status.MarkConditions(xpv2.ReconcileError(err))
-		_ = r.client.Status().Patch(updateCtx, xrStatus, client.Apply, client.ForceOwnership, client.FieldOwner(FieldOwnerReconciler))
+		_ = r.applyStatus(updateCtx, xr, xrStatus)
 
 		return reconcile.Result{}, err
 	}
@@ -820,7 +820,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 				status.MarkConditions(c)
 			}
 		}
-		_ = r.client.Status().Patch(updateCtx, xrStatus, client.Apply, client.ForceOwnership, client.FieldOwner(FieldOwnerReconciler))
+		_ = r.applyStatus(updateCtx, xr, xrStatus)
 		return reconcile.Result{}, err
 	}
 
@@ -842,7 +842,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		err = errors.Wrap(err, errWatch)
 		r.record.Event(xr, event.Warning(reasonWatch, err))
 		status.MarkConditions(xpv2.ReconcileError(err))
-		_ = r.client.Status().Patch(updateCtx, xrStatus, client.Apply, client.ForceOwnership, client.FieldOwner(FieldOwnerReconciler))
+		_ = r.applyStatus(updateCtx, xr, xrStatus)
 
 		return reconcile.Result{}, err
 	}
@@ -858,7 +858,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		err = errors.Wrap(err, errPublish)
 		r.record.Event(xr, event.Warning(reasonPublish, err))
 		status.MarkConditions(xpv2.ReconcileError(err))
-		_ = r.client.Status().Patch(updateCtx, xrStatus, client.Apply, client.ForceOwnership, client.FieldOwner(FieldOwnerReconciler))
+		_ = r.applyStatus(updateCtx, xr, xrStatus)
 
 		return reconcile.Result{}, err
 	}
@@ -944,7 +944,35 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		result = reconcile.Result{RequeueAfter: jitter(res.TTL)}
 	}
 
-	return result, errors.Wrap(r.client.Status().Patch(updateCtx, xrStatus, client.Apply, client.ForceOwnership, client.FieldOwner(FieldOwnerReconciler)), errUpdateStatus)
+	return result, errors.Wrap(r.applyStatus(updateCtx, xr, xrStatus), errUpdateStatus)
+}
+
+// applyStatus server-side applies the status in xrStatus to the XR.
+//
+// xrStatus starts with no conditions, so every condition set on it has a new
+// last transition time. A condition that's unchanged from xr keeps the time it
+// already has. Otherwise each reconcile would write new timestamps, and each
+// write would trigger another reconcile.
+func (r *Reconciler) applyStatus(ctx context.Context, xr, xrStatus *composite.Unstructured) error {
+	existing := xr.GetConditions()
+	cs := xrStatus.GetConditions()
+	for i := range cs {
+		for _, c := range existing {
+			if c.Equal(cs[i]) {
+				cs[i].LastTransitionTime = c.LastTransitionTime
+			}
+		}
+	}
+
+	// SetConditions won't replace a condition that only differs by its last
+	// transition time, so clear them first.
+	if len(cs) > 0 {
+		kunstructured.RemoveNestedField(xrStatus.Object, "status", "conditions")
+		xrStatus.SetConditions(cs...)
+	}
+
+	//nolint:staticcheck // TODO(adamwg) Stop using client.Apply after the v2.2 release.
+	return r.client.Status().Patch(ctx, xrStatus, client.Apply, client.ForceOwnership, client.FieldOwner(FieldOwnerReconciler))
 }
 
 type compositionResultMeta struct {
