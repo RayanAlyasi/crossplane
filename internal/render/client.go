@@ -375,8 +375,8 @@ func (w *inMemoryStatusWriter) mergeStatus(key storeKey, incoming *unstructured.
 	// Replace the stored status with the incoming status.
 	if status, ok := incoming.Object["status"]; ok {
 		if originalStatus, ok := merged.Object["status"]; ok && doApply {
-			if statusMap, ok := status.(map[string]interface{}); ok {
-				if originalStatusMap, ok := originalStatus.(map[string]interface{}); ok {
+			if statusMap, ok := status.(map[string]any); ok {
+				if originalStatusMap, ok := originalStatus.(map[string]any); ok {
 					status = hackApply(originalStatusMap, statusMap)
 				}
 			}
@@ -396,50 +396,15 @@ func (w *inMemoryStatusWriter) mergeStatus(key storeKey, incoming *unstructured.
 // hackApply does a best-effort merge of the object, as some fields are set using SSA in Compose
 // and some are set in Reconcile.
 // This won't cover all cases, but should be sufficient for the render use-case.
-func hackApply(original map[string]interface{}, incoming map[string]interface{}) map[string]interface{} {
+func hackApply(original map[string]any, incoming map[string]any) map[string]any {
 	for k, v := range incoming {
 		if k == "conditions" {
-			incomingConditions, ok := v.([]interface{})
-			if !ok {
-				// Couldn't parse incoming conditions; just set them.
-				original[k] = v
-				continue
-			}
-
-			existingConditions, ok := original["conditions"].([]interface{})
-			if !ok {
-				// Couldn't parse existing conditions; just set the new ones.
-				original[k] = v
-				continue
-			}
-
-			// Collect new types
-			newConditionTypes := []string{}
-			for c := range incomingConditions {
-				if t, ok := incomingConditions[c].(map[string]interface{})["type"].(string); ok {
-					newConditionTypes = append(newConditionTypes, t)
-				}
-			}
-
-			// Keep only existing conditions that don't match a new type
-			conditions := []interface{}{}
-			for _, c := range existingConditions {
-				if t, ok := c.(map[string]interface{})["type"].(string); ok {
-					if !slices.Contains(newConditionTypes, t) {
-						conditions = append(conditions, c)
-					}
-				}
-			}
-
-			// Add all incoming conditions
-			conditions = append(conditions, incomingConditions...)
-
-			original[k] = conditions
+			original[k] = mergeConditions(original[k], v)
 			continue
 		}
 
-		if ov, ok := original[k].(map[string]interface{}); ok {
-			if iv, ok := v.(map[string]interface{}); ok {
+		if ov, ok := original[k].(map[string]any); ok {
+			if iv, ok := v.(map[string]any); ok {
 				original[k] = hackApply(ov, iv)
 				continue
 			}
@@ -448,6 +413,43 @@ func hackApply(original map[string]interface{}, incoming map[string]interface{})
 	}
 
 	return original
+}
+
+// mergeConditions merges incoming conditions into existing ones, replacing
+// existing conditions of the same type.
+func mergeConditions(existing, incoming any) any {
+	incomingConditions, ok := incoming.([]any)
+	if !ok {
+		// Couldn't parse incoming conditions; just set them.
+		return incoming
+	}
+
+	existingConditions, ok := existing.([]any)
+	if !ok {
+		// Couldn't parse existing conditions; just set the new ones.
+		return incoming
+	}
+
+	// Collect new types
+	newConditionTypes := []string{}
+	for c := range incomingConditions {
+		if t, ok := incomingConditions[c].(map[string]any)["type"].(string); ok {
+			newConditionTypes = append(newConditionTypes, t)
+		}
+	}
+
+	// Keep only existing conditions that don't match a new type
+	conditions := []any{}
+	for _, c := range existingConditions {
+		if t, ok := c.(map[string]any)["type"].(string); ok {
+			if !slices.Contains(newConditionTypes, t) {
+				conditions = append(conditions, c)
+			}
+		}
+	}
+
+	// Add all incoming conditions
+	return append(conditions, incomingConditions...)
 }
 
 // inMemorySubResourceClient satisfies client.SubResourceClient.
