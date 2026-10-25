@@ -607,6 +607,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	xrStatus := composite.New(composite.WithSchema(xr.Schema), composite.WithGroupVersionKind(xr.GroupVersionKind()))
 	xrStatus.SetNamespace(xr.GetNamespace())
 	xrStatus.SetName(xr.GetName())
+	// The conditions manager sets observedGeneration from this.
+	xrStatus.SetGeneration(xr.GetGeneration())
 	status := r.conditions.For(xrStatus)
 	// Keep these values, even if we don't set them this time around through the reconcile loop
 	if x := xr.GetConnectionDetailsLastPublishedTime(); x != nil {

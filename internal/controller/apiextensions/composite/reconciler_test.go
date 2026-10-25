@@ -1338,6 +1338,34 @@ func TestReconcile(t *testing.T) {
 				err: cmpopts.AnyError,
 			},
 		},
+		"ConditionsObserveGeneration": {
+			reason: "The conditions we set should observe the XR's generation.",
+			args: args{
+				c: &test.MockClient{
+					MockGet: WithComposite(t, NewComposite(func(xr *composite.Unstructured) {
+						xr.SetGeneration(3)
+					})),
+					MockStatusPatch: WantComposite(t, NewComposite(func(xr *composite.Unstructured) {
+						xr.SetGeneration(3)
+						xr.SetConditions(
+							v1.WatchCircuitClosed().WithObservedGeneration(3),
+							xpv2.ReconcileError(errors.Wrap(errBoom, errAddFinalizer)).WithObservedGeneration(3),
+						)
+					})),
+				},
+				opts: []ReconcilerOption{
+					WithCompositeFinalizer(resource.FinalizerFns{
+						AddFinalizerFn: func(_ context.Context, _ resource.Object) error {
+							return errBoom
+						},
+					}),
+				},
+			},
+			want: want{
+				r:   reconcile.Result{},
+				err: cmpopts.AnyError,
+			},
+		},
 		"CircuitBreakerClosed": {
 			reason: "When the circuit breaker is closed, we should set the CircuitClosed condition and continue with reconciliation.",
 			args: args{
